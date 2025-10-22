@@ -1,0 +1,41 @@
+name: Build, Lint & Test
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Backend: Install & Lint
+        working-directory: ./backend
+        run: |
+          npm ci
+          npm run lint || true
+
+      - name: Frontend: Install & Lint
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run lint || true
+
+      - name: Run npm audit (backend)
+        working-directory: ./backend
+        run: npm audit --json > ../backend-audit.json || true
+
+      - name: Run npm audit (frontend)
+        working-directory: ./frontend
+        run: npm audit --json > ../frontend-audit.json || true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit
+          path: |
+            backend-audit.json
+            frontend-audit.json
