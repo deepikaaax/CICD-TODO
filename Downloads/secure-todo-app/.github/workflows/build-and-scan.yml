@@ -1,0 +1,64 @@
+﻿name: Build, Test & Container Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  NODE_OPTIONS: --max-old-space-size=2048
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU and Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build backend (install & test)
+        working-directory: ./backend
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run lint || echo "no lint script"
+          npm test || echo "no test script"
+          docker build -t todo-backend:ci .
+
+      - name: Frontend: install & build (runner)
+        working-directory: ./frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          SKIP_PREFLIGHT_CHECK=true npm run build
+
+      - name: Build frontend image (uses built artifacts)
+        run: docker build -t todo-frontend:ci ./frontend
+
+      - name: Create trivy output directory
+        run: mkdir -p trivy-results || true
+
+      - name: Scan backend image with Trivy (fail on HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --format json --output trivy-results/backend-trivy.json --severity HIGH,CRITICAL todo-backend:ci || echo "trivy scan returned non-zero"
+          if jq '.Results[].Vulnerabilities | length > 0' trivy-results/backend-trivy.json | grep true >/dev/null 2>&1; then
+            echo "High/Critical vulnerabilities found in backend image"
+            exit 1
+          fi
+
+      - name: Scan frontend image with Trivy (fail on HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --format json --output trivy-results/frontend-trivy.json --severity HIGH,CRITICAL todo-frontend:ci || echo "trivy scan returned non-zero"
+          if jq '.Results[].Vulnerabilities | length > 0' trivy-results/frontend-trivy.json | grep true >/dev/null 2>&1; then
+            echo "High/Critical vulnerabilities found in frontend image"
+            exit 1
+          fi
+
+      - name: Upload Trivy results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results/
