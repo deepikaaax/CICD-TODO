@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* smooth theme transition */
+html, body, #root { height: 100%; }
+html { transition: background-color 200ms ease, color 200ms ease; }
+
+.container { max-width: 1100px; }
+.card-shadow { box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+.control-pill { @apply px-3 py-1 rounded-full text-sm font-medium; }
